@@ -11,8 +11,8 @@ android {
         applicationId = "com.titan.pro.v80"
         minSdk = 26
         targetSdk = 34
-        versionCode = 80
-        versionName = "80.0.0"
+        versionCode = 81
+        versionName = "80.1.0-full"
     }
 
     buildTypes {
@@ -39,8 +39,11 @@ android {
         }
     }
 
+    // Critical: do not compress large offline packs inside APK
     androidResources {
-        noCompress += listOf("zip", "py", "db", "json")
+        noCompress += listOf(
+            "zip", "py", "db", "json", "jsonl", "pack", "bin", "html"
+        )
     }
 }
 
