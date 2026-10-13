@@ -18,7 +18,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Python 3.11 (for Chaquopy pip)
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -28,7 +28,7 @@ jobs:
         with:
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: true
-          packages: "platform-tools platforms;android-34 build-tools;34.0.0"
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
 
       - name: Write SDK license files
         run: |
@@ -40,24 +40,37 @@ jobs:
             printf '%s\n' "d56f5187479451eabf01fb78af6dfcb131a6481e" > "$sdkroot/licenses/android-sdk-arm-dbt-license"
           done
 
+      - name: Generate release keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore titan-release.keystore \
+            -alias titan \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass titanpro80 -keypass titanpro80 \
+            -dname "CN=TITAN PRO, OU=Mobile, O=Titan, L=Tehran, ST=Tehran, C=IR"
+          ls -lh titan-release.keystore
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
 
-      - name: Build Embedded Debug APK (Python+numpy+pandas+flask inside)
-        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Build signed Release APK
+        run: gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Show APK size
+      - name: Verify APK
         run: |
-          find app/build/outputs -type f -name "*.apk" -exec ls -lh {} \;
+          set -e
           APK=$(find app/build/outputs -type f -name "*.apk" | head -1)
-          SIZE=$(stat -c%s "$APK")
-          echo "APK_BYTES=$SIZE"
+          echo "APK=$APK"
+          ls -lh "$APK"
+          # Confirm arm64 + signing
+          $ANDROID_HOME/build-tools/35.0.0/aapt dump badging "$APK" | head -20 || true
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose "$APK" || true
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TITAN-PRO-EMBEDDED-APK
+          name: TITAN-PRO-XIAOMI-A15-APK
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
