@@ -43,9 +43,10 @@ class MainActivity : AppCompatActivity() {
         s.domStorageEnabled = true
         s.databaseEnabled = true
         s.allowFileAccess = true
+        s.allowContentAccess = true
         s.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         s.cacheMode = WebSettings.LOAD_DEFAULT
-        s.userAgentString = s.userAgentString + " TitanProV80/80.0.0"
+        s.userAgentString = s.userAgentString + " TitanProV80/80.1.0"
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 progress.progress = newProgress
@@ -75,26 +76,39 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 }
+
                 val mmm = File(Environment.getExternalStorageDirectory(), "MMM")
                 val engineDir = File(mmm, "titan_pro")
-                mmm.mkdirs()
-                File(mmm, "data").mkdirs()
-                File(mmm, "cache").mkdirs()
-                File(mmm, "memory").mkdirs()
-                File(mmm, "secrets").mkdirs()
+                listOf(mmm, File(mmm, "data"), File(mmm, "cache"), File(mmm, "memory"), File(mmm, "secrets")).forEach { it.mkdirs() }
 
                 val marker = File(engineDir, ".v80_extracted")
-                if (!marker.exists() || !File(engineDir, "run_titan.py").exists()) {
+                val hasEngine = File(engineDir, "run_titan.py").exists()
+                if (!marker.exists() || !hasEngine) {
                     runOnUiThread { status.text = getString(R.string.status_extracting) }
-                    extractAssetZip("TITAN_PRO_V80_FINAL.zip", mmm)
+                    try {
+                        extractAssetZip("TITAN_PRO_V80_FINAL.zip", mmm)
+                    } catch (_: Exception) {
+                        // fallback: copy assets/engine tree if present
+                        copyAssetTree("engine", engineDir)
+                    }
                     marker.parentFile?.mkdirs()
-                    marker.writeText("80.0.0")
+                    marker.writeText("80.1.0-full")
                 }
 
-                val html = buildSetupHtml(mmm.absolutePath, engineDir.absolutePath)
                 runOnUiThread {
                     status.visibility = View.GONE
-                    webView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null)
+                    // Prefer rich embedded UI from APK assets
+                    try {
+                        webView.loadUrl("file:///android_asset/ui/index.html")
+                    } catch (_: Exception) {
+                        webView.loadDataWithBaseURL(
+                            "file:///android_asset/",
+                            buildSetupHtml(mmm.absolutePath, engineDir.absolutePath),
+                            "text/html",
+                            "UTF-8",
+                            null
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -129,39 +143,40 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun copyAssetTree(assetDir: String, dest: File) {
+        val list = assets.list(assetDir) ?: return
+        dest.mkdirs()
+        for (name in list) {
+            val path = "$assetDir/$name"
+            val children = assets.list(path)
+            if (children != null && children.isNotEmpty()) {
+                copyAssetTree(path, File(dest, name))
+            } else {
+                assets.open(path).use { input ->
+                    File(dest, name).outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+        }
+    }
+
     private fun buildSetupHtml(mmmPath: String, enginePath: String): String {
         return """
-<!DOCTYPE html>
-<html lang=\"fa\" dir=\"rtl\">
-<head>
-<meta charset=\"utf-8\"/>
+<!DOCTYPE html><html lang=\"fa\" dir=\"rtl\"><head><meta charset=\"utf-8\"/>
 <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/>
 <title>TITAN PRO V80</title>
-<style>
-body{font-family:system-ui,sans-serif;background:#0b1220;color:#e8eefc;margin:0;padding:20px;line-height:1.6}
-h1{font-size:1.4rem;color:#7dd3fc}
-.card{background:#111827;border:1px solid #1f2a44;border-radius:16px;padding:16px;margin:12px 0}
-.ok{color:#4ade80}.path{font-family:monospace;font-size:.85rem;word-break:break-all;background:#0b1220;padding:8px;border-radius:8px}
-a.btn{display:inline-block;background:#2563eb;color:#fff;border-radius:12px;padding:12px 18px;text-decoration:none;margin:6px 4px 0 0}
-a.btn.g{background:#059669}
-</style>
-</head>
-<body>
-<h1>TITAN PRO V80.0</h1>
-<p>موتور تحلیل کامل داخل حافظه داخلی استخراج شد.</p>
-<div class=\"card\"><div class=\"ok\">✓ V80 در MMM</div>
-<div class=\"path\">$mmmPath</div>
-<div class=\"path\">$enginePath</div></div>
-<div class=\"card\">
-<b>اجرای موتور:</b> Termux → <code>cd /storage/emulated/0/MMM/titan_pro && pip install -r requirements.txt && python run_titan.py</code>
-<br/><a class=\"btn\" href=\"http://127.0.0.1:8080\">داشبورد محلی</a>
-<a class=\"btn g\" href=\"https://github.com/ehsanrahmanii-code/TITAN-PRO-V80-Android\">GitHub</a>
-</div>
-<script>setInterval(function(){fetch('http://127.0.0.1:8080/health').then(function(r){if(r.ok)location.href='http://127.0.0.1:8080/';}).catch(function(){});},4000);</script>
+<style>body{font-family:system-ui,sans-serif;background:#0b1220;color:#e8eefc;margin:0;padding:20px}
+h1{color:#7dd3fc}.card{background:#111827;border-radius:16px;padding:16px;margin:12px 0}
+.ok{color:#4ade80}a.btn{display:inline-block;background:#2563eb;color:#fff;padding:12px 18px;border-radius:12px;text-decoration:none;margin-top:8px}
+</style></head><body>
+<h1>TITAN PRO V80</h1>
+<div class=\"card\"><div class=\"ok\">✓ بسته کامل داخل APK</div>
+<p class=\"path\">$mmmPath</p><p class=\"path\">$enginePath</p></div>
+<a class=\"btn\" href=\"http://127.0.0.1:8080\">داشبورد</a>
 </body></html>
 """.trimIndent()
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }
