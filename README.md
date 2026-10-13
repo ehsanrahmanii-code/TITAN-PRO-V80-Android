@@ -1,20 +1,29 @@
-# TITAN PRO V80 — Android
+# TITAN PRO V80 — Android + Engine
 
-موتور تحلیل **TITAN PRO V80.0** به‌همراه شل اندروید (WebView).
+ریپوی آمادهِ ساخت **APK** و موتور TITAN PRO V80.
 
-## محتویات APK
-- کل بسته `TITAN_PRO_V80_FINAL.zip` را در `app/src/main/assets/` قرار دهید
-- هنگام اولین اجرا → استخراج به **Internal Storage/MMM**
-- رابط WebView + تلاش خودکار برای `http://127.0.0.1:8080`
+## ساخت APK (بدون نیاز به آپلود دستی)
 
-## ساخت APK (بالای ۳۰MB)
-1. فایل `TITAN_PRO_V80_FINAL.zip` را در `app/src/main/assets/` بگذارید
-2. تب **Actions** → **Build TITAN PRO V80 APK** → **Run workflow**
+1. بروید: https://github.com/ehsanrahmanii-code/TITAN-PRO-V80-Android/actions
+2. ورکفلو **Build TITAN PRO V80 APK** → **Run workflow**
 3. Artifact به نام `TITAN-PRO-V80-APK` را دانلود کنید
 
-یا با Android Studio: Build → Build APK(s)
+اگر تب Actions را نمی‌بینید:
+**Settings → Actions → General → Allow all actions and reusable workflows**
 
-## اجرای موتور روی گوشی
-Termux + `python run_titan.py` از مسیر `/storage/emulated/0/MMM/titan_pro`
+## محتویات ریپو
+| مسیر | شرح |
+|------|------|
+| `app/` | شل Android (WebView + استخراج MMM) |
+| `titan_pro/` | موتور Python V80 |
+| `.github/workflows/` | ساخت خودکار APK |
+
+## اجرا روی گوشی
+پس از نصب APK، با Termux:
+```bash
+cd /storage/emulated/0/MMM/titan_pro
+pip install -r requirements.txt
+python run_titan.py
+```
 
 **فقط تحلیل** — Live پیش‌فرض خاموش.
