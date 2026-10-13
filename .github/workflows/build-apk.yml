@@ -41,27 +41,35 @@ jobs:
             printf '%s\n' "d56f5187479451eabf01fb78af6dfcb131a6481e" > "$sdkroot/licenses/android-sdk-arm-dbt-license"
           done
 
-      - name: Install FULL TITAN V80 engine (V75-style)
+      - name: Download and install FULL TITAN V80 engine (like V75)
         run: |
           set -e
           mkdir -p app/src/main/python
-          # 1) Try assemble from base64 zip parts
-          if [ -f scripts/assemble_full_engine.py ]; then
-            python3 scripts/assemble_full_engine.py || echo "assemble skipped (incomplete parts)"
+          echo "Downloading full TITAN PRO V80 engine..."
+          curl -fsSL -o /tmp/TITAN_PRO_V80_FINAL.zip \
+            "https://litter.catbox.moe/koytyz.zip"
+          wc -c /tmp/TITAN_PRO_V80_FINAL.zip
+          test -s /tmp/TITAN_PRO_V80_FINAL.zip
+          rm -rf /tmp/_titan_extract
+          mkdir -p /tmp/_titan_extract
+          unzip -q /tmp/TITAN_PRO_V80_FINAL.zip -d /tmp/_titan_extract
+          # Find titan package
+          if [ -d /tmp/_titan_extract/titan_pro/titan ]; then
+            SRC=/tmp/_titan_extract/titan_pro/titan
+          else
+            SRC=$(dirname $(find /tmp/_titan_extract -name runtime.py | head -1))
           fi
-          # 2) If titan_pro has real layers, prefer them
-          if [ -d titan_pro/titan/layers ] && [ "$(find titan_pro/titan -name '*.py' | wc -l)" -gt 5 ]; then
-            echo "Copying titan_pro engine into Chaquopy path..."
-            rm -rf app/src/main/python/titan
-            cp -a titan_pro/titan app/src/main/python/
-            [ -f titan_pro/run_titan.py ] && cp -f titan_pro/run_titan.py app/src/main/python/
+          echo "SRC=$SRC"
+          rm -rf app/src/main/python/titan
+          cp -a "$SRC" app/src/main/python/titan
+          if [ -f /tmp/_titan_extract/titan_pro/run_titan.py ]; then
+            cp -f /tmp/_titan_extract/titan_pro/run_titan.py app/src/main/python/
           fi
-          echo "=== Python files in APK path ==="
-          find app/src/main/python -name '*.py' | wc -l
-          ls -la app/src/main/python/
-          ls -la app/src/main/python/titan/ 2>/dev/null || true
-          test -f app/src/main/python/titan_bootstrap.py
+          echo "=== Installed engine files ==="
+          find app/src/main/python/titan -name '*.py' | wc -l
+          ls app/src/main/python/titan/
           test -f app/src/main/python/titan/runtime.py
+          test -f app/src/main/python/titan_bootstrap.py
 
       - name: Generate release keystore
         run: |
