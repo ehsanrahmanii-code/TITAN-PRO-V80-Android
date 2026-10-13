@@ -60,14 +60,26 @@ class MainActivity : AppCompatActivity() {
         bootEngine()
     }
 
-    /** Copy full engine zip from APK assets into app private storage (Python can read it). */
+    private fun deleteRecursive(file: File) {
+        if (file.isDirectory) {
+            file.listFiles()?.forEach { deleteRecursive(it) }
+        }
+        file.delete()
+    }
+
+    /** Copy full engine zip from APK assets into app private storage. */
     private fun ensureEngineZip(): File {
         val out = File(filesDir, "TITAN_PRO_V80_FINAL.zip")
-        if (out.exists() && out.length() > 100_000L) return out
+        // Always refresh zip from assets when APK is newer / first run
         assets.open("TITAN_PRO_V80_FINAL.zip").use { input ->
             FileOutputStream(out).use { output ->
                 input.copyTo(output)
             }
+        }
+        // Clear previous extract so bootstrap does a clean extract (no permission leftovers)
+        val oldEngine = File(filesDir, "titan_engine")
+        if (oldEngine.exists()) {
+            deleteRecursive(oldEngine)
         }
         return out
     }
@@ -88,7 +100,6 @@ class MainActivity : AppCompatActivity() {
                 val py = Python.getInstance()
                 val boot = py.getModule("titan_bootstrap")
                 if (!started) {
-                    // pass filesDir; bootstrap finds zip at filesDir/TITAN_PRO_V80_FINAL.zip
                     boot.callAttr("start_server", filesDir.absolutePath)
                     started = true
                 }
