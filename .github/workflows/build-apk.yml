@@ -20,27 +20,30 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Ensure Titan engine ZIP in assets
+      - name: Assemble engine ZIP from base64 parts
         run: |
-          mkdir -p app/src/main/assets
-          if [ ! -f app/src/main/assets/TITAN_PRO_V80_FINAL.zip ]; then
-            echo "Place TITAN_PRO_V80_FINAL.zip under app/src/main/assets before build."
-            echo "MISSING_ENGINE" > app/src/main/assets/README_ENGINE.txt
+          chmod +x scripts/assemble_engine.sh
+          if ls engine_b64/p*.b64 >/dev/null 2>&1; then
+            ./scripts/assemble_engine.sh
+          else
+            mkdir -p app/src/main/assets
+            echo "ENGINE_PARTS_MISSING" > app/src/main/assets/README_ENGINE.txt
+            echo "Warning: engine_b64 parts not in repo yet"
           fi
-          ls -lh app/src/main/assets/ || true
+          ls -lah app/src/main/assets/ || true
 
       - name: Gradle wrapper
         run: |
           gradle wrapper --gradle-version 8.2.1
           chmod +x gradlew
 
-      - name: Assemble Release APK
+      - name: Assemble Release APK (all ABIs)
         run: ./gradlew assembleRelease --no-daemon
 
-      - name: List outputs
+      - name: Show APK size
         run: find app/build/outputs -type f -name '*.apk' -exec ls -lh {} \;
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: TITAN-PRO-V80-APK
