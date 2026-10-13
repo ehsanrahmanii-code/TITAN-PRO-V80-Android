@@ -4,26 +4,52 @@ plugins {
     id("com.chaquo.python")
 }
 
+import java.util.Properties
+import java.io.FileInputStream
+
 android {
     namespace = "com.titan.pro"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.titan.pro.v80"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 91
-        versionName = "91.0.0-embedded"
+        targetSdk = 35
+        versionCode = 92
+        versionName = "92.0.0-a15"
 
+        // Xiaomi / real phones are arm64
         ndk {
-            // Real phones + emulator; keeps APK large with native Python
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a")
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            val ks = file("../titan-release.keystore")
+            if (ks.exists()) {
+                storeFile = ks
+                storePassword = "titanpro80"
+                keyAlias = "titan"
+                keyPassword = "titanpro80"
+            }
         }
     }
 
     buildTypes {
-        release { isMinifyEnabled = false }
-        debug { isMinifyEnabled = false }
+        release {
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
+            isMinifyEnabled = false
+            // also sign debug with release key so Xiaomi accepts install
+            val rel = signingConfigs.findByName("release")
+            if (rel != null && rel.storeFile != null && rel.storeFile!!.exists()) {
+                signingConfig = rel
+            }
+        }
     }
 
     compileOptions {
@@ -34,6 +60,10 @@ android {
     kotlinOptions { jvmTarget = "17" }
 
     packaging {
+        jniLibs {
+            // Required on many Xiaomi / HyperOS builds for native Python libs
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
@@ -45,7 +75,6 @@ chaquopy {
         version = "3.11"
         buildPython("python3.11")
         pip {
-            // Libraries compiled INTO the APK
             install("numpy")
             install("pandas")
             install("requests")
@@ -57,9 +86,9 @@ chaquopy {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    implementation("androidx.webkit:webkit:1.10.0")
+    implementation("androidx.webkit:webkit:1.11.0")
 }
