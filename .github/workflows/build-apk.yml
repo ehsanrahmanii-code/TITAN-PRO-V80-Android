@@ -41,23 +41,32 @@ jobs:
             printf '%s\n' "d56f5187479451eabf01fb78af6dfcb131a6481e" > "$sdkroot/licenses/android-sdk-arm-dbt-license"
           done
 
-      - name: Download FULL engine zip into assets (runtime extract)
+      - name: Extract FULL engine into app/src/main/python/titan
         run: |
           set -e
-          mkdir -p app/src/main/assets
-          mkdir -p app/src/main/python
-          echo "Downloading full TITAN PRO V80 engine zip..."
-          curl -fsSL -o app/src/main/assets/TITAN_PRO_V80_FINAL.zip \
+          mkdir -p /tmp/engine_zip app/src/main/python
+          echo "Downloading TITAN PRO V80 engine zip..."
+          curl -fsSL -o /tmp/engine_zip/TITAN_PRO_V80_FINAL.zip \
             "https://litter.catbox.moe/koytyz.zip"
-          # also keep a copy next to python for fallback
-          cp -f app/src/main/assets/TITAN_PRO_V80_FINAL.zip app/src/main/python/TITAN_PRO_V80_FINAL.zip
-          wc -c app/src/main/assets/TITAN_PRO_V80_FINAL.zip
-          test $(wc -c < app/src/main/assets/TITAN_PRO_V80_FINAL.zip) -gt 500000
-          # verify zip integrity
-          unzip -t app/src/main/assets/TITAN_PRO_V80_FINAL.zip | tail -3
-          unzip -l app/src/main/assets/TITAN_PRO_V80_FINAL.zip | grep bootstrap_storage
+          test $(wc -c < /tmp/engine_zip/TITAN_PRO_V80_FINAL.zip) -gt 500000
+          unzip -q /tmp/engine_zip/TITAN_PRO_V80_FINAL.zip -d /tmp/engine_zip/out
+          # zip contains titan_pro/titan/{runtime.py,layers/...}
+          SRC=$(find /tmp/engine_zip/out -type f -name runtime.py | head -1)
+          test -n "$SRC"
+          SRC_DIR=$(dirname "$SRC")
+          echo "Engine source: $SRC_DIR"
+          rm -rf app/src/main/python/titan
+          mkdir -p app/src/main/python/titan
+          cp -a "$SRC_DIR"/. app/src/main/python/titan/
+          # verify critical files
+          test -f app/src/main/python/titan/runtime.py
+          test -f app/src/main/python/titan/layers/core/bootstrap_storage.py
           test -f app/src/main/python/titan_bootstrap.py
-          echo "Engine zip OK in assets"
+          N=$(find app/src/main/python/titan -name '*.py' | wc -l)
+          echo "Packaged py files: $N"
+          test "$N" -ge 50
+          ls -la app/src/main/python/titan/layers/core/ | head -15
+          echo "Engine embedded OK"
 
       - name: Generate release keystore
         run: |
@@ -81,9 +90,6 @@ jobs:
       - name: Show APK
         run: |
           find app/build/outputs -type f -name "*.apk" -exec ls -lh {} \;
-          # confirm assets zip is inside APK
-          APK=$(find app/build/outputs -name "*.apk" | head -1)
-          unzip -l "$APK" | grep -i TITAN_PRO || echo "WARNING: zip not listed in APK (may be compressed path)"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
