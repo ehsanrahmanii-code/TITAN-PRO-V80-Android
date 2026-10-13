@@ -1,6 +1,6 @@
-"""Layer loader for TITAN PRO V78.
+"""Layer loader for TITAN PRO V80.
 
-Why not plain imports?  The V8..V78 layers deliberately *wrap* module-level names
+Why not plain imports?  The V8..V80 layers deliberately *wrap* module-level names
 (analyze_asset, update_cache, v55_desk_snapshot, ...) and read each other through
 globals().  Separate module namespaces would silently break that contract, so every
 layer file is compiled with its real filename (clean tracebacks) and executed, in
@@ -99,7 +99,8 @@ LAYER_ORDER = [
     "hardening/v79_7_enterprise_contract",
     "hardening/v79_8_enterprise_infra",
     "hardening/v79_9_service_architecture",
-    "ui/v79_glass_dashboard",
+    "hardening/v80_advanced_platform",
+    "ui/v79_win11_glass_dashboard",
     "entry/main_entry",
 ]
 
