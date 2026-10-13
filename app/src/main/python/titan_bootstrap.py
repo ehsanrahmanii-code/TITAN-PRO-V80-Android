@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Bootstrap TITAN PRO V80 — extract full engine zip from filesDir, then start Flask."""
+"""Bootstrap TITAN PRO V80 — extract engine zip, load layers in-place (no copytree)."""
 from __future__ import annotations
 
 import os
@@ -37,64 +37,108 @@ def _record_error(label: str) -> str:
     return _last_error
 
 
+def _chmod_tree(root: Path) -> None:
+    """Make extracted files readable/writable on Android."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        try:
+            os.chmod(dirpath, 0o755)
+        except Exception:
+            pass
+        for name in filenames:
+            try:
+                os.chmod(os.path.join(dirpath, name), 0o644)
+            except Exception:
+                pass
+
+
+def _find_titan_dir(eng: Path) -> Path:
+    """Locate the titan package directory (contains runtime.py + layers/)."""
+    candidates = [
+        eng / "titan_pro" / "titan",
+        eng / "titan",
+    ]
+    for c in candidates:
+        if (c / "runtime.py").is_file() and (c / "layers").is_dir():
+            return c
+    found = list(eng.rglob("runtime.py"))
+    for rt in found:
+        parent = rt.parent
+        if (parent / "layers").is_dir():
+            return parent
+    if found:
+        return found[0].parent
+    raise FileNotFoundError(f"runtime.py not found under {eng}")
+
+
 def _extract_engine(files_dir: str) -> Path:
+    """Extract zip once; return path to titan/ package (NO copytree)."""
     home = Path(files_dir)
     eng = home / "titan_engine"
     marker = eng / ".v80_ok"
-    if marker.is_file() and (eng / "titan" / "runtime.py").is_file():
-        n_layers = (eng / "titan" / "layers")
-        if n_layers.is_dir() and any(n_layers.rglob("*.py")):
-            return eng
+
+    # Reuse previous successful extract
+    if marker.is_file():
+        try:
+            titan_dir = Path(marker.read_text(encoding="utf-8").strip().split("\n")[0])
+            if titan_dir.is_dir() and (titan_dir / "runtime.py").is_file():
+                if (titan_dir / "layers" / "core" / "bootstrap_storage.py").is_file():
+                    return titan_dir
+        except Exception:
+            pass
 
     zip_path = home / "TITAN_PRO_V80_FINAL.zip"
     if not zip_path.is_file() or zip_path.stat().st_size < 100000:
-        # try next to this module (if packaged as python data)
         alt = Path(__file__).resolve().parent / "TITAN_PRO_V80_FINAL.zip"
         if alt.is_file() and alt.stat().st_size > 100000:
             zip_path = alt
         else:
             raise FileNotFoundError(
-                f"Engine zip missing or too small: {zip_path}. "
-                "MainActivity must copy assets/TITAN_PRO_V80_FINAL.zip to filesDir."
+                f"Engine zip missing: {zip_path}. "
+                "MainActivity must copy assets zip to filesDir first."
             )
 
+    # Clean previous extract completely
     if eng.exists():
-        shutil.rmtree(eng)
-    eng.mkdir(parents=True)
+        try:
+            _chmod_tree(eng)
+            shutil.rmtree(eng, ignore_errors=True)
+        except Exception:
+            shutil.rmtree(eng, ignore_errors=True)
+    eng.mkdir(parents=True, exist_ok=True)
 
     with zipfile.ZipFile(zip_path, "r") as zf:
         zf.extractall(eng)
 
-    src = eng / "titan_pro" / "titan"
-    if not src.is_dir():
-        found = list(eng.rglob("runtime.py"))
-        if not found:
-            raise FileNotFoundError("runtime.py missing after extract")
-        src = found[0].parent
+    _chmod_tree(eng)
 
-    dest = eng / "titan"
-    if src.resolve() != dest.resolve():
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(src, dest)
-
-    n = sum(1 for _ in (eng / "titan").rglob("*.py"))
+    titan_dir = _find_titan_dir(eng)
+    n = sum(1 for _ in titan_dir.rglob("*.py"))
     if n < 50:
-        raise RuntimeError(f"too few engine files after extract: {n}")
-    marker.write_text(f"py_files={n}\n", encoding="utf-8")
-    print(f"TITAN engine extracted: {n} py files -> {eng}", flush=True)
-    return eng
+        raise RuntimeError(f"too few engine files: {n} at {titan_dir}")
+
+    bs = titan_dir / "layers" / "core" / "bootstrap_storage.py"
+    if not bs.is_file():
+        raise FileNotFoundError(f"bootstrap_storage missing after extract: {bs}")
+
+    marker.write_text(str(titan_dir) + f"\npy_files={n}\n", encoding="utf-8")
+    print(f"TITAN engine ready: {n} py files at {titan_dir}", flush=True)
+    return titan_dir
 
 
-def _load_from_engine(eng: Path):
-    titan_dir = eng / "titan"
-    if str(eng) not in sys.path:
-        sys.path.insert(0, str(eng))
+def _load_from_engine(titan_dir: Path):
+    """Load runtime + all layers from extracted titan package path."""
+    # Parent of titan package must be on sys.path so `import titan` style works if needed
+    parent = titan_dir.parent
+    if str(parent) not in sys.path:
+        sys.path.insert(0, str(parent))
+    if str(titan_dir) not in sys.path:
+        sys.path.insert(0, str(titan_dir))
 
     import importlib.util
+
     rt_path = titan_dir / "runtime.py"
     if not rt_path.is_file():
-        raise FileNotFoundError(f"runtime missing at {rt_path}")
+        raise FileNotFoundError(f"runtime missing: {rt_path}")
 
     spec = importlib.util.spec_from_file_location("titan_runtime_v80", str(rt_path))
     if spec is None or spec.loader is None:
@@ -104,12 +148,11 @@ def _load_from_engine(eng: Path):
     sys.modules["titan.runtime"] = mod
     spec.loader.exec_module(mod)
 
-    # Force LAYER_DIR to extracted path so all layers resolve
+    # CRITICAL: point LAYER_DIR at real extracted layers
     mod.LAYER_DIR = titan_dir / "layers"
     if not mod.LAYER_DIR.is_dir():
-        raise FileNotFoundError(f"layers dir missing: {mod.LAYER_DIR}")
+        raise FileNotFoundError(f"layers missing: {mod.LAYER_DIR}")
 
-    # Verify bootstrap_storage exists before load
     bs = mod.LAYER_DIR / "core" / "bootstrap_storage.py"
     if not bs.is_file():
         raise FileNotFoundError(f"bootstrap_storage missing: {bs}")
@@ -145,8 +188,8 @@ def start_titan(files_dir: str) -> str:
             os.environ["PYTHONUNBUFFERED"] = "1"
             os.environ.setdefault("HOME", str(files_dir))
 
-            eng = _extract_engine(files_dir)
-            ns = _load_from_engine(eng)
+            titan_dir = _extract_engine(files_dir)
+            ns = _load_from_engine(titan_dir)
             _status["engine"] = "titan_full_v80"
             _status["layers_log"] = ns.get("_TITAN_LAYER_LOG", [])
             loaded = [x for x in (_status["layers_log"] or []) if not x.get("skipped")]
