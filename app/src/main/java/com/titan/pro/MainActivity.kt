@@ -15,12 +15,10 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.Executors
 
-/**
- * Same boot pattern as working TITAN-V75-Full-Android:
- * start engine in background → wait_ready up to 180s → load WebView.
- */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
@@ -62,22 +60,39 @@ class MainActivity : AppCompatActivity() {
         bootEngine()
     }
 
+    /** Copy full engine zip from APK assets into app private storage (Python can read it). */
+    private fun ensureEngineZip(): File {
+        val out = File(filesDir, "TITAN_PRO_V80_FINAL.zip")
+        if (out.exists() && out.length() > 100_000L) return out
+        assets.open("TITAN_PRO_V80_FINAL.zip").use { input ->
+            FileOutputStream(out).use { output ->
+                input.copyTo(output)
+            }
+        }
+        return out
+    }
+
     private fun bootEngine() {
         progress.visibility = View.VISIBLE
         status.visibility = View.VISIBLE
-        status.text = "در حال راه‌اندازی موتور TITAN PRO V80…"
+        status.text = "در حال آماده‌سازی موتور TITAN PRO V80…"
         io.execute {
             try {
+                ui.post { status.text = "کپی موتور کامل…" }
+                val zip = ensureEngineZip()
+                ui.post { status.text = "راه‌اندازی موتور (${zip.length() / 1024} KB)…" }
+
                 if (!Python.isStarted()) {
                     Python.start(AndroidPlatform(this))
                 }
                 val py = Python.getInstance()
                 val boot = py.getModule("titan_bootstrap")
                 if (!started) {
+                    // pass filesDir; bootstrap finds zip at filesDir/TITAN_PRO_V80_FINAL.zip
                     boot.callAttr("start_server", filesDir.absolutePath)
                     started = true
                 }
-                ui.post { status.text = "منتظر داشبورد Flask… (ممکن است ۱–۲ دقیقه طول بکشد)" }
+                ui.post { status.text = "منتظر داشبورد… (ممکن است ۱–۲ دقیقه طول بکشد)" }
                 val ready = boot.callAttr("wait_ready", "http://127.0.0.1:8080/health", 180.0).toBoolean()
                 ui.post {
                     progress.visibility = View.GONE
