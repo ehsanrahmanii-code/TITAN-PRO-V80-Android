@@ -15,8 +15,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
-import java.io.File
-import java.io.FileOutputStream
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
@@ -60,50 +58,23 @@ class MainActivity : AppCompatActivity() {
         bootEngine()
     }
 
-    private fun deleteRecursive(file: File) {
-        if (file.isDirectory) {
-            file.listFiles()?.forEach { deleteRecursive(it) }
-        }
-        file.delete()
-    }
-
-    /** Copy full engine zip from APK assets into app private storage. */
-    private fun ensureEngineZip(): File {
-        val out = File(filesDir, "TITAN_PRO_V80_FINAL.zip")
-        // Always refresh zip from assets when APK is newer / first run
-        assets.open("TITAN_PRO_V80_FINAL.zip").use { input ->
-            FileOutputStream(out).use { output ->
-                input.copyTo(output)
-            }
-        }
-        // Clear previous extract so bootstrap does a clean extract (no permission leftovers)
-        val oldEngine = File(filesDir, "titan_engine")
-        if (oldEngine.exists()) {
-            deleteRecursive(oldEngine)
-        }
-        return out
-    }
-
     private fun bootEngine() {
         progress.visibility = View.VISIBLE
         status.visibility = View.VISIBLE
-        status.text = "در حال آماده‌سازی موتور TITAN PRO V80…"
+        status.text = "در حال راه‌اندازی TITAN PRO V80…"
         io.execute {
             try {
-                ui.post { status.text = "کپی موتور کامل…" }
-                val zip = ensureEngineZip()
-                ui.post { status.text = "راه‌اندازی موتور (${zip.length() / 1024} KB)…" }
-
                 if (!Python.isStarted()) {
                     Python.start(AndroidPlatform(this))
                 }
                 val py = Python.getInstance()
                 val boot = py.getModule("titan_bootstrap")
                 if (!started) {
+                    ui.post { status.text = "لود لایه‌های موتور…" }
                     boot.callAttr("start_server", filesDir.absolutePath)
                     started = true
                 }
-                ui.post { status.text = "منتظر داشبورد… (ممکن است ۱–۲ دقیقه طول بکشد)" }
+                ui.post { status.text = "منتظر داشبورد…" }
                 val ready = boot.callAttr("wait_ready", "http://127.0.0.1:8080/health", 180.0).toBoolean()
                 ui.post {
                     progress.visibility = View.GONE
