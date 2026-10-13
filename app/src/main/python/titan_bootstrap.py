@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Bootstrap TITAN PRO V80 — extract engine zip, load layers in-place (no copytree)."""
+"""Bootstrap TITAN PRO V80 — load engine already packaged by Chaquopy."""
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 import threading
 import time
 import traceback
 import urllib.request
-import zipfile
 from pathlib import Path
 
 _started = False
@@ -37,127 +35,42 @@ def _record_error(label: str) -> str:
     return _last_error
 
 
-def _chmod_tree(root: Path) -> None:
-    """Make extracted files readable/writable on Android."""
-    for dirpath, dirnames, filenames in os.walk(root):
-        try:
-            os.chmod(dirpath, 0o755)
-        except Exception:
-            pass
-        for name in filenames:
-            try:
-                os.chmod(os.path.join(dirpath, name), 0o644)
-            except Exception:
-                pass
+def _load_engine():
+    """Load titan.runtime from Chaquopy-packaged python/titan/."""
+    # Prefer normal package import (Chaquopy puts app/src/main/python on path)
+    try:
+        from titan import runtime as mod
+    except Exception:
+        # Fallback: load by file path next to this module
+        import importlib.util
+        here = Path(__file__).resolve().parent
+        rt_path = here / "titan" / "runtime.py"
+        if not rt_path.is_file():
+            raise FileNotFoundError(f"runtime.py not packaged: {rt_path}")
+        spec = importlib.util.spec_from_file_location("titan.runtime", str(rt_path))
+        if spec is None or spec.loader is None:
+            raise RuntimeError("cannot load runtime")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["titan.runtime"] = mod
+        spec.loader.exec_module(mod)
 
+    # Ensure LAYER_DIR points at packaged layers
+    layer_dir = Path(mod.__file__).resolve().parent / "layers"
+    if not layer_dir.is_dir():
+        # Chaquopy AssetFinder path
+        layer_dir = Path(__file__).resolve().parent / "titan" / "layers"
+    mod.LAYER_DIR = layer_dir
 
-def _find_titan_dir(eng: Path) -> Path:
-    """Locate the titan package directory (contains runtime.py + layers/)."""
-    candidates = [
-        eng / "titan_pro" / "titan",
-        eng / "titan",
-    ]
-    for c in candidates:
-        if (c / "runtime.py").is_file() and (c / "layers").is_dir():
-            return c
-    found = list(eng.rglob("runtime.py"))
-    for rt in found:
-        parent = rt.parent
-        if (parent / "layers").is_dir():
-            return parent
-    if found:
-        return found[0].parent
-    raise FileNotFoundError(f"runtime.py not found under {eng}")
-
-
-def _extract_engine(files_dir: str) -> Path:
-    """Extract zip once; return path to titan/ package (NO copytree)."""
-    home = Path(files_dir)
-    eng = home / "titan_engine"
-    marker = eng / ".v80_ok"
-
-    # Reuse previous successful extract
-    if marker.is_file():
-        try:
-            titan_dir = Path(marker.read_text(encoding="utf-8").strip().split("\n")[0])
-            if titan_dir.is_dir() and (titan_dir / "runtime.py").is_file():
-                if (titan_dir / "layers" / "core" / "bootstrap_storage.py").is_file():
-                    return titan_dir
-        except Exception:
-            pass
-
-    zip_path = home / "TITAN_PRO_V80_FINAL.zip"
-    if not zip_path.is_file() or zip_path.stat().st_size < 100000:
-        alt = Path(__file__).resolve().parent / "TITAN_PRO_V80_FINAL.zip"
-        if alt.is_file() and alt.stat().st_size > 100000:
-            zip_path = alt
-        else:
-            raise FileNotFoundError(
-                f"Engine zip missing: {zip_path}. "
-                "MainActivity must copy assets zip to filesDir first."
-            )
-
-    # Clean previous extract completely
-    if eng.exists():
-        try:
-            _chmod_tree(eng)
-            shutil.rmtree(eng, ignore_errors=True)
-        except Exception:
-            shutil.rmtree(eng, ignore_errors=True)
-    eng.mkdir(parents=True, exist_ok=True)
-
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(eng)
-
-    _chmod_tree(eng)
-
-    titan_dir = _find_titan_dir(eng)
-    n = sum(1 for _ in titan_dir.rglob("*.py"))
-    if n < 50:
-        raise RuntimeError(f"too few engine files: {n} at {titan_dir}")
-
-    bs = titan_dir / "layers" / "core" / "bootstrap_storage.py"
+    bs = layer_dir / "core" / "bootstrap_storage.py"
     if not bs.is_file():
-        raise FileNotFoundError(f"bootstrap_storage missing after extract: {bs}")
+        # list what we have for diagnostics
+        sample = list(layer_dir.rglob("*.py"))[:20] if layer_dir.is_dir() else []
+        raise FileNotFoundError(
+            f"bootstrap_storage missing at {bs}. "
+            f"layer_dir={layer_dir} exists={layer_dir.is_dir()} sample={sample}"
+        )
 
-    marker.write_text(str(titan_dir) + f"\npy_files={n}\n", encoding="utf-8")
-    print(f"TITAN engine ready: {n} py files at {titan_dir}", flush=True)
-    return titan_dir
-
-
-def _load_from_engine(titan_dir: Path):
-    """Load runtime + all layers from extracted titan package path."""
-    # Parent of titan package must be on sys.path so `import titan` style works if needed
-    parent = titan_dir.parent
-    if str(parent) not in sys.path:
-        sys.path.insert(0, str(parent))
-    if str(titan_dir) not in sys.path:
-        sys.path.insert(0, str(titan_dir))
-
-    import importlib.util
-
-    rt_path = titan_dir / "runtime.py"
-    if not rt_path.is_file():
-        raise FileNotFoundError(f"runtime missing: {rt_path}")
-
-    spec = importlib.util.spec_from_file_location("titan_runtime_v80", str(rt_path))
-    if spec is None or spec.loader is None:
-        raise RuntimeError("cannot load runtime spec")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["titan_runtime_v80"] = mod
-    sys.modules["titan.runtime"] = mod
-    spec.loader.exec_module(mod)
-
-    # CRITICAL: point LAYER_DIR at real extracted layers
-    mod.LAYER_DIR = titan_dir / "layers"
-    if not mod.LAYER_DIR.is_dir():
-        raise FileNotFoundError(f"layers missing: {mod.LAYER_DIR}")
-
-    bs = mod.LAYER_DIR / "core" / "bootstrap_storage.py"
-    if not bs.is_file():
-        raise FileNotFoundError(f"bootstrap_storage missing: {bs}")
-
-    ns = mod.load(str(rt_path), as_main=False, stop_before="entry/main_entry")
+    ns = mod.load(str(Path(mod.__file__).resolve()), as_main=False, stop_before="entry/main_entry")
     return ns
 
 
@@ -174,7 +87,15 @@ def start_titan(files_dir: str) -> str:
             base = Path(files_dir)
             mmm = base / "MMM"
             _error_log = mmm / "logs" / "android_engine_error.log"
-            for sub in (mmm, mmm / "data", mmm / "cache", mmm / "memory", mmm / "secrets", mmm / "logs", mmm / "cache" / "tmp"):
+            for sub in (
+                mmm,
+                mmm / "data",
+                mmm / "cache",
+                mmm / "memory",
+                mmm / "secrets",
+                mmm / "logs",
+                mmm / "cache" / "tmp",
+            ):
                 sub.mkdir(parents=True, exist_ok=True)
 
             os.environ["TITAN_MMM"] = str(mmm)
@@ -188,8 +109,7 @@ def start_titan(files_dir: str) -> str:
             os.environ["PYTHONUNBUFFERED"] = "1"
             os.environ.setdefault("HOME", str(files_dir))
 
-            titan_dir = _extract_engine(files_dir)
-            ns = _load_from_engine(titan_dir)
+            ns = _load_engine()
             _status["engine"] = "titan_full_v80"
             _status["layers_log"] = ns.get("_TITAN_LAYER_LOG", [])
             loaded = [x for x in (_status["layers_log"] or []) if not x.get("skipped")]
@@ -207,6 +127,7 @@ def start_titan(files_dir: str) -> str:
                     elif app is not None:
                         try:
                             from waitress import serve
+
                             serve(app, host=HOST, port=PORT, threads=6)
                         except Exception:
                             app.run(host=HOST, port=PORT, threaded=True, use_reloader=False)
@@ -226,6 +147,7 @@ def start_titan(files_dir: str) -> str:
             _status["msg"] = _last_error[:800]
             try:
                 from flask import Flask
+
                 fb = Flask(__name__)
                 err = _last_error
 
@@ -245,6 +167,7 @@ def start_titan(files_dir: str) -> str:
                 def _fb():
                     try:
                         from waitress import serve
+
                         serve(fb, host=HOST, port=PORT, threads=2)
                     except Exception:
                         fb.run(host=HOST, port=PORT, threaded=True, use_reloader=False)
@@ -277,4 +200,5 @@ def last_error() -> str:
 
 def health() -> str:
     import json
+
     return json.dumps(_status, ensure_ascii=False)
