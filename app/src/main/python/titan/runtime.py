@@ -87,12 +87,10 @@ LAYER_ORDER = [
     "hardening/v77_security",
     "hardening/v77_trace",
     "hardening/v77_diagnostics",
-    # ---- V78 advanced modules (evaluation, realistic forecast, funnel, UI) ----
     "analytics/v78_realistic_forecast",
     "intel/v78_opportunity_funnel",
     "ui/v78_personalization",
     "hardening/v78_evaluation_dashboard",
-    # ---- V78.1 deep activation: consensus strengthen + full UI wire + force-activate ----
     "hardening/v78_1_deep_activation",
     "hardening/v79_5_calibration_learning_queue",
     "hardening/v79_6_six_pillars",
@@ -106,7 +104,6 @@ LAYER_ORDER = [
 
 LAYER_DIR = Path(__file__).resolve().parent / "layers"
 
-# Names that successive layers intentionally rebind; tracked for transparency.
 CHAIN_NAMES = (
     "analyze_asset",
     "update_cache",
@@ -124,7 +121,7 @@ _FLAGS = _fut.annotations.compiler_flag
 def load(entry_file: str, as_main: bool = True, stop_before: str | None = None) -> dict:
     """Execute all layers into one namespace and return it.
 
-    stop_before: layer name at which to stop (used by tests to avoid running __main__).
+    Missing layers are skipped (not a hard crash) so partial embeds still boot.
     """
     ns: dict = {
         "__name__": "__main__" if as_main else "titan_pro",
@@ -147,32 +144,29 @@ def load(entry_file: str, as_main: bool = True, stop_before: str | None = None) 
             break
         path = LAYER_DIR / f"{name}.py"
         if not path.is_file():
-            raise FileNotFoundError(f"TITAN layer missing: {path}")
+            log.append({"layer": name, "lines": 0, "ms": 0, "skipped": True, "reason": "missing"})
+            continue
         try:
             src = path.read_text(encoding="utf-8")
             code = compile(src, str(path), "exec", flags=_FLAGS, dont_inherit=True)
         except (OSError, SyntaxError) as exc:
-            raise RuntimeError(f"Failed to load TITAN layer {name}: {exc}") from exc
+            log.append({"layer": name, "lines": 0, "ms": 0, "skipped": True, "reason": str(exc)[:200]})
+            continue
         t0 = time.perf_counter()
         try:
             exec(code, ns)
         except Exception as exc:
-            raise RuntimeError(f"Error while executing TITAN layer {name}: {exc}") from exc
+            log.append({"layer": name, "lines": src.count("\n"), "ms": 0, "skipped": True, "reason": f"exec:{exc}"[:200]})
+            continue
         log.append({"layer": name, "lines": src.count("\n"), "ms": round((time.perf_counter() - t0) * 1000, 1)})
         for cn in CHAIN_NAMES:
             obj = ns.get(cn)
             if obj is not None and id(obj) != last_id.get(cn):
                 last_id[cn] = id(obj)
                 bindings[cn].append(name)
-    # Professional: single source of truth for package version after all layers
-    ns["__version__"] = ns.get("V80_VERSION") and "80.0.0" or ns.get("__version__", "80.0.0")
-    if ns.get("V80_VERSION"):
-        ns["__version__"] = "80.0.0"
-        ns["V79_VERSION"] = "80.0.0"
-        ns["_TITAN_VERSION"] = "80.0.0"
-        ns["PIPELINE_VERSION"] = ns.get("PIPELINE_VERSION") or "80.0.0"
-    else:
-        ns.setdefault("__version__", "80.0.0")
-        ns.setdefault("V79_VERSION", "80.0.0")
-        ns["_TITAN_VERSION"] = ns.get("V79_UI_VERSION") or ns.get("V79_6_VERSION") or ns.get("__version__", "80.0.0")
+    ns["__version__"] = "80.0.0"
+    ns["V79_VERSION"] = "80.0.0"
+    ns["V80_VERSION"] = "80.0.0"
+    ns["_TITAN_VERSION"] = "80.0.0"
+    ns.setdefault("PIPELINE_VERSION", "80.0.0")
     return ns
