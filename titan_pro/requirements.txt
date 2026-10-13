@@ -1,0 +1,11 @@
+# Pinned for reproducibility (compatible with Python 3.10+)
+numpy>=1.24,<2.1
+pandas>=2.0,<2.3
+requests>=2.31,<3
+flask>=3.0,<3.2
+waitress>=3.0,<4
+websocket-client>=1.6,<2
+
+# Optional enterprise infrastructure (install when needed)
+# psycopg2-binary>=2.9,<3
+# redis>=5.0,<6
