@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.chaquo.python")
 }
 
 android {
@@ -11,8 +12,13 @@ android {
         applicationId = "com.titan.pro.v80"
         minSdk = 26
         targetSdk = 34
-        versionCode = 81
-        versionName = "80.1.0-full"
+        versionCode = 90
+        versionName = "90.0.0-embedded"
+
+        // Native Python interpreter + wheels for real devices + emulator
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        }
     }
 
     buildTypes {
@@ -38,12 +44,35 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
 
-    // Critical: do not compress large offline packs inside APK
-    androidResources {
-        noCompress += listOf(
-            "zip", "py", "db", "json", "jsonl", "pack", "bin", "html"
-        )
+chaquopy {
+    defaultConfig {
+        // 3.11 supports 32-bit + 64-bit ABIs
+        version = "3.11"
+        pip {
+            // All analysis deps live INSIDE the APK — no Termux, no external install
+            install("numpy==1.26.4")
+            install("pandas==2.1.4")
+            install("requests==2.31.0")
+            install("flask==3.0.0")
+            install("waitress==3.0.0")
+            install("websocket-client==1.6.4")
+            install("certifi")
+            install("urllib3")
+            install("charset-normalizer")
+            install("idna")
+            install("python-dateutil")
+            install("pytz")
+            install("tzdata")
+            install("six")
+            install("werkzeug")
+            install("jinja2")
+            install("markupsafe")
+            install("itsdangerous")
+            install("click")
+            install("blinker")
+        }
     }
 }
 
