@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,11 +41,27 @@ jobs:
             printf '%s\n' "d56f5187479451eabf01fb78af6dfcb131a6481e" > "$sdkroot/licenses/android-sdk-arm-dbt-license"
           done
 
-      - name: Assemble FULL TITAN V80 into app python path
+      - name: Install FULL TITAN V80 engine (V75-style)
         run: |
-          python3 scripts/assemble_full_engine.py
+          set -e
+          mkdir -p app/src/main/python
+          # 1) Try assemble from base64 zip parts
+          if [ -f scripts/assemble_full_engine.py ]; then
+            python3 scripts/assemble_full_engine.py || echo "assemble skipped (incomplete parts)"
+          fi
+          # 2) If titan_pro has real layers, prefer them
+          if [ -d titan_pro/titan/layers ] && [ "$(find titan_pro/titan -name '*.py' | wc -l)" -gt 5 ]; then
+            echo "Copying titan_pro engine into Chaquopy path..."
+            rm -rf app/src/main/python/titan
+            cp -a titan_pro/titan app/src/main/python/
+            [ -f titan_pro/run_titan.py ] && cp -f titan_pro/run_titan.py app/src/main/python/
+          fi
+          echo "=== Python files in APK path ==="
+          find app/src/main/python -name '*.py' | wc -l
           ls -la app/src/main/python/
-          find app/src/main/python/titan -name '*.py' | wc -l
+          ls -la app/src/main/python/titan/ 2>/dev/null || true
+          test -f app/src/main/python/titan_bootstrap.py
+          test -f app/src/main/python/titan/runtime.py
 
       - name: Generate release keystore
         run: |
@@ -60,7 +77,9 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Build signed Release APK (full TITAN inside)
+      - name: Build signed Release APK
+        env:
+          GRADLE_OPTS: -Xmx4g -Dorg.gradle.daemon=false
         run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Show APK
