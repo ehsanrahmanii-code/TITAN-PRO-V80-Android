@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TITAN PRO V80</string>
+    <string name="status_preparing">در حال آماده‌سازی TITAN V80…</string>
+    <string name="status_extracting">استخراج موتور کامل به حافظه داخلی/MMM…</string>
+    <string name="status_need_permission">دسترسی All files لازم است تا پوشه MMM ساخته شود.</string>
+    <string name="status_error">خطا: %1$s</string>
+</resources>
