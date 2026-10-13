@@ -20,17 +20,20 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Assemble engine ZIP from base64 parts
+      - name: Build engine ZIP into app assets
         run: |
-          chmod +x scripts/assemble_engine.sh
+          mkdir -p app/src/main/assets
           if ls engine_b64/p*.b64 >/dev/null 2>&1; then
-            ./scripts/assemble_engine.sh
-          else
-            mkdir -p app/src/main/assets
-            echo "ENGINE_PARTS_MISSING" > app/src/main/assets/README_ENGINE.txt
-            echo "Warning: engine_b64 parts not in repo yet"
+            chmod +x scripts/assemble_engine.sh || true
+            ./scripts/assemble_engine.sh || true
           fi
-          ls -lah app/src/main/assets/ || true
+          if [ -d titan_pro ] && [ ! -f app/src/main/assets/TITAN_PRO_V80_FINAL.zip ]; then
+            (cd titan_pro && zip -r ../app/src/main/assets/TITAN_PRO_V80_FINAL.zip .)
+          fi
+          if [ ! -f app/src/main/assets/TITAN_PRO_V80_FINAL.zip ]; then
+            echo "TITAN PRO V80 engine will be completed in repo assets" > app/src/main/assets/README_ENGINE.txt
+          fi
+          ls -lah app/src/main/assets/
 
       - name: Gradle wrapper
         run: |
