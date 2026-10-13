@@ -1,4 +1,4 @@
-name: Build TITAN PRO Embedded APK
+name: Build TITAN PRO Full Embedded APK
 
 on:
   push:
@@ -40,6 +40,12 @@ jobs:
             printf '%s\n' "d56f5187479451eabf01fb78af6dfcb131a6481e" > "$sdkroot/licenses/android-sdk-arm-dbt-license"
           done
 
+      - name: Assemble FULL TITAN V80 into app python path
+        run: |
+          python3 scripts/assemble_full_engine.py
+          ls -la app/src/main/python/
+          find app/src/main/python/titan -name '*.py' | wc -l
+
       - name: Generate release keystore
         run: |
           keytool -genkeypair -v \
@@ -48,29 +54,21 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass titanpro80 -keypass titanpro80 \
             -dname "CN=TITAN PRO, OU=Mobile, O=Titan, L=Tehran, ST=Tehran, C=IR"
-          ls -lh titan-release.keystore
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
 
-      - name: Build signed Release APK
+      - name: Build signed Release APK (full TITAN inside)
         run: gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Verify APK
-        run: |
-          set -e
-          APK=$(find app/build/outputs -type f -name "*.apk" | head -1)
-          echo "APK=$APK"
-          ls -lh "$APK"
-          # Confirm arm64 + signing
-          $ANDROID_HOME/build-tools/35.0.0/aapt dump badging "$APK" | head -20 || true
-          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose "$APK" || true
+      - name: Show APK
+        run: find app/build/outputs -type f -name "*.apk" -exec ls -lh {} \;
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TITAN-PRO-XIAOMI-A15-APK
+          name: TITAN-PRO-FULL-V80-APK
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
