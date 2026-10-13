@@ -13,9 +13,6 @@ android {
         targetSdk = 34
         versionCode = 80
         versionName = "80.0.0"
-        ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-        }
     }
 
     buildTypes {
@@ -26,18 +23,22 @@ android {
             isMinifyEnabled = false
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
     kotlinOptions {
         jvmTarget = "17"
     }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
     androidResources {
         noCompress += listOf("zip", "py", "db", "json")
     }
