@@ -81,13 +81,22 @@ def load(entry_file: str, as_main: bool = True, stop_before: str | None = None) 
     for name in LAYER_ORDER:
         if stop_before and name == stop_before:
             break
-        path = LAYER_DIR / f"{name}.py"
-        if not path.is_file():
-            raise FileNotFoundError(f"TITAN layer missing: {path}")
+        # Chaquopy's AssetFinder exposes Python modules through its import loader;
+        # its virtual paths are not real OS directories, so Path.is_file/read_text
+        # incorrectly report packaged layers as missing on Android.
+        module_name = "titan.layers." + name.replace("/", ".")
         try:
-            src = path.read_text(encoding="utf-8")
-            code = compile(src, str(path), "exec", flags=_FLAGS, dont_inherit=True)
-        except (OSError, SyntaxError) as exc:
+            import importlib.util
+            spec = importlib.util.find_spec(module_name)
+            if spec is None or spec.loader is None:
+                raise FileNotFoundError(f"no import spec for {module_name}")
+            get_source = getattr(spec.loader, "get_source", None)
+            src = get_source(module_name) if callable(get_source) else None
+            if not src:
+                raise FileNotFoundError(f"source unavailable from loader for {module_name}")
+            filename = spec.origin or str(LAYER_DIR / f"{name}.py")
+            code = compile(src, filename, "exec", flags=_FLAGS, dont_inherit=True)
+        except (OSError, ImportError, SyntaxError, FileNotFoundError) as exc:
             raise RuntimeError(f"Failed to load TITAN layer {name}: {exc}") from exc
         started = time.perf_counter()
         try:
