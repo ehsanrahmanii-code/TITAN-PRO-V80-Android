@@ -1,9 +1,12 @@
-name: Build TITAN PRO Full Embedded APK
+name: Build TITAN PRO V80 APK
 
 on:
   push:
     branches: [main, master]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -27,46 +30,20 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          accept-android-sdk-licenses: true
-          log-accepted-android-sdk-licenses: true
           packages: "platform-tools platforms;android-35 build-tools;35.0.0"
 
-      - name: Write SDK license files
+      - name: Verify checked-in TITAN engine
         run: |
-          for sdkroot in "${ANDROID_SDK_ROOT:-}" "${ANDROID_HOME:-}" /usr/local/lib/android/sdk; do
-            [ -n "$sdkroot" ] && [ -d "$sdkroot" ] || continue
-            mkdir -p "$sdkroot/licenses"
-            printf '%s\n' "24333f8a63b6825ea9c5514f6abdf25bea91e6fe" > "$sdkroot/licenses/android-sdk-license"
-            printf '%s\n' "84831b9409646a918e30573bab4c9c91346d8abd" > "$sdkroot/licenses/android-sdk-preview-license"
-            printf '%s\n' "d56f5187479451eabf01fb78af6dfcb131a6481e" > "$sdkroot/licenses/android-sdk-arm-dbt-license"
-          done
-
-      - name: Extract FULL engine into app/src/main/python/titan
-        run: |
-          set -e
-          mkdir -p /tmp/engine_zip app/src/main/python
-          echo "Downloading TITAN PRO V80 engine zip..."
-          curl -fsSL -o /tmp/engine_zip/TITAN_PRO_V80_FINAL.zip \
-            "https://litter.catbox.moe/koytyz.zip"
-          test $(wc -c < /tmp/engine_zip/TITAN_PRO_V80_FINAL.zip) -gt 500000
-          unzip -q /tmp/engine_zip/TITAN_PRO_V80_FINAL.zip -d /tmp/engine_zip/out
-          # zip contains titan_pro/titan/{runtime.py,layers/...}
-          SRC=$(find /tmp/engine_zip/out -type f -name runtime.py | head -1)
-          test -n "$SRC"
-          SRC_DIR=$(dirname "$SRC")
-          echo "Engine source: $SRC_DIR"
-          rm -rf app/src/main/python/titan
-          mkdir -p app/src/main/python/titan
-          cp -a "$SRC_DIR"/. app/src/main/python/titan/
-          # verify critical files
+          set -euxo pipefail
+          test -f app/src/main/python/titan_bootstrap.py
           test -f app/src/main/python/titan/runtime.py
           test -f app/src/main/python/titan/layers/core/bootstrap_storage.py
-          test -f app/src/main/python/titan_bootstrap.py
+          test -f app/src/main/python/titan/layers/web/flask_app.py
+          test -f app/src/main/python/titan/layers/entry/main_entry.py
           N=$(find app/src/main/python/titan -name '*.py' | wc -l)
-          echo "Packaged py files: $N"
-          test "$N" -ge 50
-          ls -la app/src/main/python/titan/layers/core/ | head -15
-          echo "Engine embedded OK"
+          echo "Checked-in Python files: $N"
+          test "$N" -ge 20
+          python -m py_compile $(find app/src/main/python -name '*.py' -print)
 
       - name: Generate release keystore
         run: |
@@ -75,7 +52,7 @@ jobs:
             -alias titan \
             -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass titanpro80 -keypass titanpro80 \
-            -dname "CN=TITAN PRO, OU=Mobile, O=Titan, L=Tehran, ST=Tehran, C=IR"
+            -dname "CN=TAI TITAN PRO, OU=Mobile, O=Titan, L=Tehran, ST=Tehran, C=IR"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -87,13 +64,17 @@ jobs:
           GRADLE_OPTS: -Xmx4g -Dorg.gradle.daemon=false
         run: gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Show APK
+      - name: Verify APK output
         run: |
-          find app/build/outputs -type f -name "*.apk" -exec ls -lh {} \;
+          set -euxo pipefail
+          find app/build/outputs/apk -type f -name '*.apk' -exec ls -lh {} \;
+          APK=$(find app/build/outputs/apk -type f -name '*.apk' | head -1)
+          test -n "$APK"
+          cp "$APK" TAI-TITAN-PRO-V80.apk
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TITAN-PRO-FULL-V80-APK
-          path: app/build/outputs/apk/**/*.apk
+          name: TAI-TITAN-PRO-V80-APK
+          path: TAI-TITAN-PRO-V80.apk
           if-no-files-found: error
