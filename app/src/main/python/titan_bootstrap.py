@@ -54,20 +54,21 @@ def _load_engine():
         sys.modules["titan.runtime"] = mod
         spec.loader.exec_module(mod)
 
-    # Ensure LAYER_DIR points at packaged layers
+    # Chaquopy AssetFinder paths are virtual: pathlib may report that the
+    # packaged "titan/layers" directory does not exist even though its Python
+    # modules are available to the import loader. Validate via import machinery.
+    import importlib.util
     layer_dir = Path(mod.__file__).resolve().parent / "layers"
-    if not layer_dir.is_dir():
-        # Chaquopy AssetFinder path
-        layer_dir = Path(__file__).resolve().parent / "titan" / "layers"
     mod.LAYER_DIR = layer_dir
-
-    bs = layer_dir / "core" / "bootstrap_storage.py"
-    if not bs.is_file():
-        # list what we have for diagnostics
-        sample = list(layer_dir.rglob("*.py"))[:20] if layer_dir.is_dir() else []
+    try:
+        bs_spec = importlib.util.find_spec("titan.layers.core.bootstrap_storage")
+    except (ImportError, ModuleNotFoundError, ValueError):
+        bs_spec = None
+    if bs_spec is None or bs_spec.loader is None:
         raise FileNotFoundError(
-            f"bootstrap_storage missing at {bs}. "
-            f"layer_dir={layer_dir} exists={layer_dir.is_dir()} sample={sample}"
+            "Packaged TITAN layer module unavailable: "
+            "titan.layers.core.bootstrap_storage; "
+            f"runtime={mod.__file__}; layer_path={layer_dir}"
         )
 
     ns = mod.load(str(Path(mod.__file__).resolve()), as_main=False, stop_before="entry/main_entry")
